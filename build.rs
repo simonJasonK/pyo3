@@ -9,7 +9,10 @@ use std::{
     str::FromStr,
 };
 
-const PY3_MIN_MINOR: u8 = 5;
+/// Minimum required Python version.
+const PY3_MIN_MINOR: u8 = 6;
+/// Maximum Python version that can be used as minimum required Python version with abi3.
+const ABI3_MAX_MIN_MINOR: u8 = 9;
 const CFG_KEY: &str = "py_sys_config";
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -770,12 +773,24 @@ fn configure(interpreter_config: &InterpreterConfig) -> Result<String> {
         bail!("Python 2 is not supported");
     }
 
-    if env::var_os("CARGO_FEATURE_ABI3").is_some() {
-        println!("cargo:rustc-cfg=Py_LIMITED_API");
+    fn get_abi3_min_python() -> Option<u8> {
+        for i in PY3_MIN_MINOR..=ABI3_MAX_MIN_MINOR {
+            if env::var_os(format!("CARGO_FEATURE_ABI{}", i)).is_some() {
+                return Some(i);
+            }
+        }
+        None
     }
 
-    if let Some(minor) = interpreter_config.version.minor {
-        for i in 6..=minor {
+    let minor = if env::var_os("CARGO_FEATURE_ABI3").is_some() {
+        println!("cargo:rustc-cfg=Py_LIMITED_API");
+        get_abi3_min_python().or(interpreter_config.version.minor)
+    } else {
+        interpreter_config.version.minor
+    };
+
+    if let Some(minor) = minor {
+        for i in PY3_MIN_MINOR..=minor {
             println!("cargo:rustc-cfg=Py_3_{}", i);
             flags += format!("CFG_Py_3_{},", i).as_ref();
         }
