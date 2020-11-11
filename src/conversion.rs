@@ -3,10 +3,12 @@
 //! Conversions between various states of Rust and Python types and their wrappers.
 use crate::err::{self, PyDowncastError, PyResult};
 use crate::type_object::PyTypeInfo;
-use crate::types::PyTuple;
+use crate::types::{PyList, PyTuple};
 use crate::{
     ffi, gil, Py, PyAny, PyCell, PyClass, PyNativeType, PyObject, PyRef, PyRefMut, Python,
 };
+use serde_json;
+use std::collections::HashMap;
 use std::ptr::NonNull;
 
 /// This trait represents that **we can do zero-cost conversion from the object
@@ -215,6 +217,32 @@ impl ToPyObject for () {
 impl IntoPy<PyObject> for () {
     fn into_py(self, py: Python) -> PyObject {
         py.None()
+    }
+}
+
+impl IntoPy<PyObject> for serde_json::Value {
+    fn into_py(self, py: Python) -> PyObject {
+        match self {
+            serde_json::Value::Null => py.None(),
+            serde_json::Value::Bool(b) => b.into_py(py),
+            serde_json::Value::Number(n) => n.as_f64().into_py(py),
+            serde_json::Value::String(s) => s.into_py(py),
+            serde_json::Value::Array(a) => {
+                let py_list = PyList::empty(py);
+                a.into_iter().map(|e| py_list.append(e.into_py(py))).count();
+
+                py_list.into_py(py)
+            }
+            serde_json::Value::Object(o) => {
+                let mut py_dict = HashMap::new();
+
+                o.into_iter()
+                    .map(|(k, v)| py_dict.insert(k, v.into_py(py)))
+                    .count();
+
+                py_dict.into_py(py)
+            }
+        }
     }
 }
 
